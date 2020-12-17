@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	//"math"
+	"math/big"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yourbasic/bit"
 )
@@ -56,7 +58,7 @@ func pt1(inputs []int) []int {
 			d3++
 		}
 	}
-	fmt.Printf("d1: %v, d3: %v", d1, d3)
+	fmt.Printf("d1: %v, d3: %v\n", d1, d3)
 	return inputs
 }
 
@@ -90,34 +92,34 @@ func drops3(drop *bit.Set, inputsLen int) bool {
 	return false
 }
 
-func topRecursiveScan(inputs []int, drop *bit.Set, index int, ch chan int) {
-	ret := 0
-	ret += recursiveScan(inputs, drop.Add(index), index+1)
-	ret += recursiveScan(inputs, drop.Delete(index), index+1)
+func topRecursiveScan(inputs []int, drop *bit.Set, index int, ch chan *big.Int) {
+	ret := new(big.Int)
+	ret.Add(ret, recursiveScan(inputs, drop.Add(index), index+1))
+	ret.Add(ret, recursiveScan(inputs, drop.Delete(index), index+1))
 	ch <- ret
 }
 
-func recursiveScan(inputs []int, drop *bit.Set, index int) int {
-	ret := 0
+func recursiveScan(inputs []int, drop *bit.Set, index int) *big.Int {
+	ret := new(big.Int)
 	if index == len(inputs) {
 		if isValid(inputs, drop.Add(index)) {
-			ret++
+			ret.Add(ret, big.NewInt(1))
 		}
 		if isValid(inputs, drop.Delete(index)) {
-			ret++
+			ret.Add(ret, big.NewInt(1))
 		}
 		return ret
 	}
 	if drops3(drop, len(inputs)) {
 		return ret
 	}
-	ret += recursiveScan(inputs, drop.Add(index), index+1)
-	ret += recursiveScan(inputs, drop.Delete(index), index+1)
+	ret.Add(ret, recursiveScan(inputs, drop.Add(index), index+1))
+	ret.Add(ret, recursiveScan(inputs, drop.Delete(index), index+1))
 	return ret
 }
 
-func pt2(inputs []int) {
-	ch := make(chan int)
+func pt2v1(inputs []int) {
+	ch := make(chan *big.Int)
 	for i := 0; i < 16; i++ {
 		drop := bit.New()
 		tmp := i
@@ -130,18 +132,66 @@ func pt2(inputs []int) {
 		fmt.Println("starting with bitset: ", drop)
 		go topRecursiveScan(inputs, drop, 5, ch)
 	}
-	total := 0
+	total := big.NewInt(0)
 	for i := 0; i < 16; i++ {
-		total += <-ch
+		total.Add(total, <-ch)
 		fmt.Println("running total ", total)
 	}
 
-	fmt.Printf("outcome: %v", total)
+	fmt.Println("outcome: ", total)
+}
+
+func pt2v2(inputs []int) {
+	ch := make(chan *big.Int)
+
+	// split on steps of 3
+	start := 0
+	splits := 0
+	for end := 1; end <= len(inputs)-2; end++ {
+		if inputs[end+1]-inputs[end] == 3 {
+			go topRecursiveScan(inputs[start:end], bit.New(), 0, ch)
+			splits++
+			start = end
+		}
+	}
+	//fmt.Println("split ", splits, " times")
+	total := big.NewInt(1)
+	for ; splits > 0; splits-- {
+		total.Mul(total, <-ch)
+		//fmt.Println("running total: ", total)
+	}
+	fmt.Println("total: ", total.Div(total, big.NewInt(2)))
+}
+
+func pt2v2serial(inputs []int) {
+	// split on steps of 3
+	start := 0
+	total := big.NewInt(1)
+
+	for end := 1; end <= len(inputs)-2; end++ {
+		if inputs[end+1]-inputs[end] == 3 {
+			total.Mul(total, recursiveScan(inputs[start:end], bit.New(), 0))
+			//fmt.Println("running total: ", total)
+			start = end
+		}
+	}
+	fmt.Println("total: ", total.Div(total, big.NewInt(2)))
 }
 
 func main() {
 	input := parseString()
 	fmt.Println(len(input))
 	input = pt1(input)
-	pt2(input)
+
+	fmt.Println("parallel")
+	start := time.Now()
+	pt2v2(input)
+	duration := time.Since(start)
+	fmt.Println("start: ", start, " since: ", duration)
+
+	fmt.Println("serial")
+	start = time.Now()
+	pt2v2serial(input)
+	duration = time.Since(start)
+	fmt.Println("start: ", start, " since: ", duration)
 }
